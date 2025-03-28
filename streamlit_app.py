@@ -121,7 +121,7 @@ def app():
     st.dataframe(df.reset_index(drop=True), use_container_width=True)
 
     # --- Chart selector ---
-    st.subheader("📊 View Chart")
+    st.subheader("📊 View Trends")
     chart_option = st.selectbox("Choose a chart to display", [
         "None", "Shipments by Status", "Top Delivery Companies", "Top Postal Codes"
     ])
