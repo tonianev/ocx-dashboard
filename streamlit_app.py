@@ -34,13 +34,13 @@ def load_data():
     path = Path(__file__).parent / "ShipWise - Rose Rocket Orders Table 2025-03-19.xlsx"
     df = pd.read_excel(path)
     df = df.drop_duplicates(subset="fullId")
-    df["ETA_raw"] = df["expectedArrival__c.dateTimeInLocation"]
-    df["ETA"] = pd.to_datetime(df["ETA_raw"], errors="coerce", utc=True)
+    df["ETA"] = pd.to_datetime(df["expectedArrival__c.dateTimeInLocation"], errors="coerce", utc=True)
+    df["ETA Display"] = df["ETA"].dt.strftime("%Y-%m-%d %H:%M").fillna("N/A")
     df = df[[
         "fullId", "status", "customer.name", "pickupCompanyName__c",
-        "deliveryCompanyName__c", "deliveryZipPostal__c", "ETA"
+        "deliveryCompanyName__c", "deliveryZipPostal__c", "ETA", "ETA Display"
     ]]
-    df.columns = ["Order ID", "Status", "Customer", "Pickup", "Delivery", "Postal Code", "ETA"]
+    df.columns = ["Order ID", "Status", "Customer", "Pickup", "Delivery", "Postal Code", "ETA", "ETA Display"]
     return df
 
 def customer_filter(df):
@@ -60,16 +60,11 @@ def app():
         login()
         return
 
-    # Logo
-    st.sidebar.image("logo.png",  use_container_width=True)
-
-    # Bottom login info block
+    st.sidebar.image("logo.png", use_container_width=True)
     sidebar_footer = st.sidebar.empty()
 
-    # Title
     st.title(f"📋 Orders for {st.session_state.customer}")
 
-    # Load + filter
     df = load_data()
     df = customer_filter(df)
 
@@ -77,15 +72,8 @@ def app():
         st.warning("No orders found for your account.")
         return
 
-    # Format Status values and build dropdown
-    df["Status"] = (
-        df["Status"]
-        .fillna("")
-        .astype(str)
-        .str.strip()
-    )
-
-    # Create mapping from raw → title case
+    # Status filter dropdown (title cased)
+    df["Status"] = df["Status"].fillna("").astype(str).str.strip()
     status_title_map = {s: s.title() for s in df["Status"].unique()}
     status_options = ["All"] + sorted(status_title_map.values())
     selected_status_title = st.selectbox("Filter by Status", status_options)
@@ -94,33 +82,43 @@ def app():
         selected_status_raw = [k for k, v in status_title_map.items() if v == selected_status_title][0]
         df = df[df["Status"] == selected_status_raw]
 
-    # Sort by order ID numerically
+    # Sort and format table
     df["Order Num"] = df["Order ID"].str.extract(r"(\d+)").astype(int)
     df = df.sort_values("Order Num", ascending=False).drop(columns=["Order Num"])
+    df["ETA"] = df["ETA Display"]
+    df = df.drop(columns=["ETA Display"])
 
-    # Format ETA
-    df["ETA"] = df["ETA"].dt.strftime("%Y-%m-%d %H:%M").fillna("N/A")
+    # Format string values
+    for col in df.columns:
+        if df[col].dtype == object:
+            df[col] = df[col].fillna("").astype(str).str.strip().str.title()
 
-    for col in ["Status", "Customer", "Pickup", "Delivery", "Postal Code"]:
-        df[col] = (
-            df[col]
-            .fillna("")
-            .astype(str)
-            .str.strip()
-            .str.title()
-        )
+    # Format headers
+    df.columns = [col.title() for col in df.columns]
 
-    # Data table
+    # Table
     st.subheader("📄 Order Details")
     st.dataframe(df.reset_index(drop=True), use_container_width=True)
 
-    # Sidebar footer: login state
     with sidebar_footer.container():
         st.markdown("---")
         st.success(f"Logged in as: {st.session_state.email}")
         if st.button("Logout", key="logout"):
             st.session_state.logged_in = False
             st.rerun()
+
+    # Chart selector
+    st.subheader("📊 Visualize Trends")
+    chart_option = st.selectbox("Choose a chart to display", [
+        "None", "Shipments by Status", "Top Delivery Companies", "Top Postal Codes"
+    ])
+
+    if chart_option == "Shipments by Status":
+        st.bar_chart(df["Status"].value_counts())
+    elif chart_option == "Top Delivery Companies":
+        st.bar_chart(df["Delivery"].value_counts().head(10))
+    elif chart_option == "Top Postal Codes":
+        st.bar_chart(df["Postal Code"].value_counts().head(10))
 
 # Run the app
 app()
