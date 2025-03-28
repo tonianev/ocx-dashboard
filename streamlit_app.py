@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import altair as alt
 from pathlib import Path
 
 # -------------------------------
@@ -47,6 +48,28 @@ def customer_filter(df):
     return df[df["Customer"] == st.session_state.customer]
 
 # -------------------------------
+# Altair chart with rounded bars
+# -------------------------------
+def plot_bar(data, x_label, y_label):
+    df = data.reset_index()
+    df.columns = [x_label, y_label]
+
+    chart = alt.Chart(df).mark_bar(
+        cornerRadiusTopLeft=10,
+        cornerRadiusTopRight=10
+    ).encode(
+        x=alt.X(f"{x_label}:N", sort='-y', axis=alt.Axis(labelAngle=-30)),
+        y=alt.Y(f"{y_label}:Q", axis=alt.Axis(title=None)),
+        color=alt.Color(f"{x_label}:N", legend=None),
+        tooltip=[alt.Tooltip(f"{x_label}:N"), alt.Tooltip(f"{y_label}:Q")]
+    ).properties(
+        width='container',
+        height=400
+    )
+
+    st.altair_chart(chart, use_container_width=True)
+
+# -------------------------------
 # App layout
 # -------------------------------
 def app():
@@ -72,7 +95,7 @@ def app():
         st.warning("No orders found for your account.")
         return
 
-    # Status filter dropdown (title cased)
+    # --- Filter by status (title case dropdown) ---
     df["Status"] = df["Status"].fillna("").astype(str).str.strip()
     status_title_map = {s: s.title() for s in df["Status"].unique()}
     status_options = ["All"] + sorted(status_title_map.values())
@@ -82,43 +105,42 @@ def app():
         selected_status_raw = [k for k, v in status_title_map.items() if v == selected_status_title][0]
         df = df[df["Status"] == selected_status_raw]
 
-    # Sort and format table
+    # --- Sort and display table ---
     df["Order Num"] = df["Order ID"].str.extract(r"(\d+)").astype(int)
     df = df.sort_values("Order Num", ascending=False).drop(columns=["Order Num"])
     df["ETA"] = df["ETA Display"]
     df = df.drop(columns=["ETA Display"])
 
-    # Format string values
     for col in df.columns:
         if df[col].dtype == object:
-            df[col] = df[col].fillna("").astype(str).str.strip().str.title()
+            df[col] = df[col].fillna("").astype(str).str.strip().str.lower().str.title()
 
-    # Format headers
     df.columns = [col.title() for col in df.columns]
 
-    # Table
     st.subheader("📄 Order Details")
     st.dataframe(df.reset_index(drop=True), use_container_width=True)
 
+    # --- Chart selector ---
+    st.subheader("📊 View Chart")
+    chart_option = st.selectbox("Choose a chart to display", [
+        "None", "Shipments by Status", "Top Delivery Companies", "Top Postal Codes"
+    ])
+
+    if chart_option == "Shipments by Status":
+        plot_bar(df["Status"].value_counts(), "Status", "Count")
+    elif chart_option == "Top Delivery Companies":
+        plot_bar(df["Delivery"].value_counts().head(10), "Delivery", "Count")
+    elif chart_option == "Top Postal Codes":
+        plot_bar(df["Postal Code"].value_counts().head(10), "Postal Code", "Count")
+
+
+    # --- Sidebar footer ---
     with sidebar_footer.container():
         st.markdown("---")
         st.success(f"Logged in as: {st.session_state.email}")
         if st.button("Logout", key="logout"):
             st.session_state.logged_in = False
             st.rerun()
-
-    # Chart selector
-    st.subheader("📊 Visualize Trends")
-    chart_option = st.selectbox("Choose a chart to display", [
-        "None", "Shipments by Status", "Top Delivery Companies", "Top Postal Codes"
-    ])
-
-    if chart_option == "Shipments by Status":
-        st.bar_chart(df["Status"].value_counts())
-    elif chart_option == "Top Delivery Companies":
-        st.bar_chart(df["Delivery"].value_counts().head(10))
-    elif chart_option == "Top Postal Codes":
-        st.bar_chart(df["Postal Code"].value_counts().head(10))
 
 # Run the app
 app()
